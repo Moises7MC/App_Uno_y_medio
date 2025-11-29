@@ -1,23 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:uno_y_medio/features/tables/data/models/table_screen.dart';
+import 'package:uno_y_medio/features/menu/data/datasources/menu_api_datasource.dart';
 
-// Importaciones del feature Menu
-import 'package:uno_y_medio/features/menu/data/datasources/menu_local_datasource.dart';
+// Importaciones de Pantallas
+import 'package:uno_y_medio/features/tables/presentation/screens/table_screen.dart'; 
+
+// Importaciones del feature Menu (con la nueva API)
 import 'package:uno_y_medio/features/menu/data/repositories/menu_repository_impl.dart';
 import 'package:uno_y_medio/features/menu/presentation/providers/menu_provider.dart';
 
-// Importaciones del feature Tables
-import 'package:uno_y_medio/features/tables/data/datasources/table_local_datasource.dart';
+// Importaciones del feature Tables (con la nueva API)
+import 'package:uno_y_medio/features/tables/data/datasources/table_api_datasource.dart'; // <-- API MESAS
 import 'package:uno_y_medio/features/tables/data/repositories/table_repository_impl.dart';
 import 'package:uno_y_medio/features/tables/presentation/providers/table_provider.dart';
 
-// Importaciones del feature Orders
+// Importaciones del feature Orders (mantiene local)
 import 'package:uno_y_medio/features/orders/data/datasources/order_local_datasource.dart';
 import 'package:uno_y_medio/features/orders/data/repositories/order_repository_impl.dart';
 import 'package:uno_y_medio/features/orders/presentation/providers/order_provider.dart';
 
-// 👇 AÑADE ESTAS IMPORTACIONES del feature Cash Management
+// Importaciones del feature Cash Management (mantiene local)
 import 'package:uno_y_medio/features/cash_management/data/datasources/cash_flow_local_datasource.dart';
 import 'package:uno_y_medio/features/cash_management/data/repositories/cash_flow_repository_impl.dart';
 import 'package:uno_y_medio/features/cash_management/presentation/providers/cash_flow_provider.dart';
@@ -31,6 +33,7 @@ class RestaurantApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Definición del color primario
     const MaterialColor primaryColor = MaterialColor(
       0xFFE55812,
       <int, Color>{
@@ -49,23 +52,23 @@ class RestaurantApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        // Provider para el feature Menu
+        // 1. PROVIDER PARA EL MENÚ (Ahora consume API de Categorías)
         ChangeNotifierProvider(
           create: (_) => MenuProvider(
             repository: MenuRepositoryImpl(
-              dataSource: MenuLocalDataSourceImpl(),
+              dataSource: MenuApiDataSourceImpl(),
             ),
           ),
         ),
-        // Provider para el feature Tables
+        // 2. PROVIDER PARA MESAS (Ahora consume API de Mesas)
         ChangeNotifierProvider(
           create: (_) => TableProvider(
             repository: TableRepositoryImpl(
-              dataSource: TableLocalDataSourceImpl(),
+              dataSource: TableApiDataSourceImpl(),
             ),
           ),
         ),
-        // Provider para el feature Orders
+        // 3. PROVIDER PARA ÓRDENES (Mantiene la lógica de persistencia local por ahora)
         ChangeNotifierProvider(
           create: (_) => OrderProvider(
             repository: OrderRepositoryImpl(
@@ -73,7 +76,7 @@ class RestaurantApp extends StatelessWidget {
             ),
           ),
         ),
-        // 👇 AÑADE ESTE Provider para el feature Cash Management
+        // 4. PROVIDER PARA CAJA (Mantiene la lógica de persistencia local por ahora)
         ChangeNotifierProvider(
           create: (_) => CashFlowProvider(
             repository: CashFlowRepositoryImpl(
@@ -82,6 +85,7 @@ class RestaurantApp extends StatelessWidget {
           ),
         ),
       ],
+      // ESTE ES EL CHILD DEL MULTIPROVIDER QUE FALTABA
       child: MaterialApp(
         title: 'Gestión de Mesas',
         debugShowCheckedModeBanner: false,

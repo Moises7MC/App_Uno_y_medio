@@ -11,6 +11,20 @@ class OrderItemEntity {
 
   double get subtotal => item.price * quantity;
 
+  // NUEVO: Método para convertir el ítem a un formato JSON simple para el backend
+  Map<String, dynamic> toJson() {
+    // Es CRÍTICO que el ID del ítem (String en Flutter) se convierta a un entero, 
+    // ya que Spring Boot espera Integer para la clave foránea 'PlatoId'.
+    final int? platoId = int.tryParse(item.id);
+    
+    // Devolvemos el formato JSON esperado por la entidad DetallePedido de Spring Boot.
+    return {
+      'platoId': platoId, 
+      'cantidad': quantity,
+      'precioUnitario': item.price,
+    };
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;

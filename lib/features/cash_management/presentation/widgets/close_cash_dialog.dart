@@ -1,19 +1,71 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cash_flow_provider.dart';
 import '../../../tables/presentation/providers/table_provider.dart';
+import '../../domain/entities/cash_flow.dart'; // Para usar CashFlowEntity
 
 class CloseCashDialog extends StatelessWidget {
   const CloseCashDialog({super.key});
 
+  final String _cajaApiUrl = 'http://localhost:8080/api/caja';
+
+  // Función auxiliar para formatear la hora
+  String _formatTime(DateTime dateTime) {
+    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+  
+  // Widget auxiliar para las filas de resumen
+  Widget _buildSummaryRow(String label, String value, Color color, {bool isBold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: isBold ? 16 : 14,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            color: color,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: isBold ? 18 : 14,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final tableProvider = Provider.of<TableProvider>(context, listen: false);
-    final cashFlowProvider = Provider.of<CashFlowProvider>(context, listen: false);
+    final tableProvider = Provider.of<TableProvider>(context);
+    final cashFlowProvider = Provider.of<CashFlowProvider>(context);
     
-    final occupiedTables = tableProvider.occupiedTables;
+    final tableProviderActions = Provider.of<TableProvider>(context, listen: false);
+    final cashFlowProviderActions = Provider.of<CashFlowProvider>(context, listen: false);
+    
+    final CashFlowEntity? currentCashFlow = cashFlowProvider.currentCashFlow;
+    final List occupiedTables = tableProvider.occupiedTables; // Corregido el tipo a List
 
-    // Si hay mesas ocupadas, mostrar advertencia
+    // 1. Manejo de caja no abierta o mesas pendientes (flujo sin cambios)
+    if (currentCashFlow == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ No hay una sesión de caja activa para cerrar.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      });
+      return const SizedBox.shrink(); 
+    }
+
     if (occupiedTables.isNotEmpty) {
       return AlertDialog(
         title: const Text('¡Mesas Pendientes!'),
@@ -24,7 +76,7 @@ class CloseCashDialog extends StatelessWidget {
         ),
         content: Text(
           'No puedes cerrar la caja. Aún hay ${occupiedTables.length} mesa${occupiedTables.length > 1 ? 's' : ''} con pedidos activos.\n\n'
-          'Ejemplo: Mesa ${occupiedTables.first.id}\n\n'
+          'Ejemplo: Mesa ${tableProvider.occupiedTables.first.id}\n\n'
           'Debes cobrar y liberar todas las mesas primero.',
         ),
         actions: [
@@ -40,21 +92,8 @@ class CloseCashDialog extends StatelessWidget {
       );
     }
 
-    // Si no hay mesas ocupadas, mostrar resumen de cierre
-    final currentCashFlow = cashFlowProvider.currentCashFlow;
-    if (currentCashFlow == null) {
-      return AlertDialog(
-        title: const Text('Error'),
-        content: const Text('No hay una sesión de caja activa.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      );
-    }
 
+    // 2. Resumen de Cierre (Si no hay mesas pendientes)
     final finalBalance = currentCashFlow.calculatedFinalBalance;
 
     return AlertDialog(
@@ -117,20 +156,50 @@ class CloseCashDialog extends StatelessWidget {
           child: const Text('Cancelar'),
         ),
         ElevatedButton.icon(
-          onPressed: () {
-            cashFlowProvider.closeCashFlow();
-            Navigator.of(context).pop();
-            
-            // Mostrar mensaje de confirmación
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Caja cerrada. Total: S/. ${finalBalance.toStringAsFixed(2)}',
+          onPressed: () async {
+            // Guardar contexto para cerrarlo al final.
+            final BuildContext dialogContext = context;
+
+            try {
+              // LLAMADA A LA API DE CIERRE: POST /api/caja/close
+              final response = await http.post(
+                Uri.parse('$_cajaApiUrl/close'),
+                headers: { 'Content-Type': 'application/json' },
+                body: json.encode({}), 
+              );
+
+              if (response.statusCode != 200) {
+                throw Exception('Error al cerrar caja. Código: ${response.statusCode}');
+              }
+              
+              // 1. ÉXITO: Sincronizar el estado (lo que pondrá currentCashFlow en null)
+              await cashFlowProviderActions.loadCurrentCashFlow();
+              
+              // 2. Mostrar mensaje de confirmación
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Caja cerrada. Total registrado: S/. ${finalBalance.toStringAsFixed(2)}',
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 4),
                 ),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 3),
-              ),
-            );
+              );
+              
+              // 3. Cerrar el diálogo solo si todo fue bien
+              Navigator.of(dialogContext).pop();
+
+            } catch (e) {
+              print('ERROR API Cierre de Caja: $e');
+              // Error, no cerramos el diálogo
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('❌ Error al cerrar caja: ${e.toString().split(':').last}'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 6),
+                ),
+              );
+            }
           },
           icon: const Icon(Icons.lock),
           label: const Text('Confirmar y Cerrar'),
@@ -141,34 +210,6 @@ class CloseCashDialog extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  Widget _buildSummaryRow(String label, String value, Color color, {bool isBold = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: isBold ? 16 : 14,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-            color: color,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: isBold ? 18 : 14,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatTime(DateTime dateTime) {
-    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 
   // Método estático para mostrar el diálogo fácilmente
